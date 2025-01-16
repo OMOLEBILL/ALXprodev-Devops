@@ -1,0 +1,105 @@
+#!/usr/bin/env bash
+
+# List of Pokémon to retrieve
+POKEMONS=("bulbasaur" "ivysaur" "venusaur" "charmander" "charmeleon")
+
+# File to log any errors
+ERROR_FILE="errors.txt"
+> "$ERROR_FILE"  # Clears or creates the file
+
+# Maximum number of parallel downloads
+MAX_CONCURRENT=2
+jobcount=0
+
+# Timeout in seconds for each request
+TIMEOUT=5
+
+#################################
+# fetch_data: Downloads a Pokémon’s JSON
+# Usage: fetch_data "bulbasaur"
+#################################
+fetch_data() {
+  local POKEMON="$1"
+
+  local LOWERCASE_NAME
+  LOWERCASE_NAME=$(echo "$POKEMON" | tr '[:upper:]' '[:lower:]')
+
+  # API endpoint
+  local API_URL="https://pokeapi.co/api/v2/pokemon/${LOWERCASE_NAME}"
+
+  # Output file
+  local OUTPUT_FILE="${LOWERCASE_NAME}.json"
+
+  echo "Retrieving data for ${POKEMON}..."
+
+  # Perform the API request
+  if curl -f -sS "$API_URL" -o "$OUTPUT_FILE"; then
+    echo "Data for ${POKEMON} saved to ${OUTPUT_FILE}"
+  else
+    # Log the error
+    echo "$(date): Failed to retrieve data for ${POKEMON}" | tee -a "$ERROR_FILE"
+  fi
+}
+
+#############################################
+# fetch_data_with_timeout: Wraps fetch_data
+# to enforce a TIMEOUT using the kill command
+# Usage: fetch_data_with_timeout "bulbasaur"
+#############################################
+fetch_data_with_timeout() {
+  local POKEMON="$1"
+
+  # Start fetch_data in the background
+  fetch_data "$POKEMON" &
+  local pid=$!
+
+  # Start a "watcher" in the background that waits $TIMEOUT seconds,
+  # then kills the fetch_data process if it's still running.
+  (
+    sleep "$TIMEOUT"
+    # If the fetch_data process is still alive, kill it
+    if kill -0 "$pid" 2>/dev/null; then
+      echo "$(date): $POKEMON request took too long, killing process $pid" | tee -a "$ERROR_FILE"
+      kill -9 "$pid"
+    fi
+  ) &
+  local watcher_pid=$!
+
+  # Wait for fetch_data to finish
+  wait "$pid"
+  local status=$?
+
+  # Now that fetch_data is done (or killed), stop the watcher
+  kill "$watcher_pid" 2>/dev/null
+
+  return $status
+}
+
+#################################
+# Main Script Logic
+#################################
+echo "Starting parallel retrieval (up to $MAX_CONCURRENT at a time)..."
+
+for POKEMON in "${POKEMONS[@]}"; do
+  # Start a background job with concurrency control
+  fetch_data_with_timeout "$POKEMON" &
+  (( jobcount++ ))
+
+  # If we've hit the max concurrency, wait for *any* job to finish
+  if [ "$jobcount" -ge "$MAX_CONCURRENT" ]; then
+    wait -n  # Wait for one job
+    (( jobcount-- ))
+  fi
+done
+
+# Wait for any remaining background jobs to finish
+wait
+
+echo "All Pokémon data retrieval tasks have completed."
+
+# Check if errors were logged
+if [ -s "$ERROR_FILE" ]; then
+  echo "Some requests failed or timed out. Check $ERROR_FILE for details."
+else
+  echo "All requests succeeded!"
+fi
