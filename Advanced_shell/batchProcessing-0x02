@@ -11,21 +11,41 @@ for POKEMON in "${POKEMONS[@]}"; do
   # API endpoint
   API_URL="https://pokeapi.co/api/v2/pokemon/${LOWERCASE_NAME}"
 
+  # Output file
   OUTPUT_FILE="${LOWERCASE_NAME}.json"
 
   echo "Retrieving data for ${POKEMON}..."
 
-  # Make the request using curl
-  # -f: fail on HTTP errors
-  # -sS: silent mode but still show errors
-  # -o: output to the specified file
-  if curl -f -sS "$API_URL" -o "$OUTPUT_FILE"; then
-    echo "Data for ${POKEMON} saved to ${OUTPUT_FILE}"
-  else
-    echo "$(date): Failed to retrieve data for ${POKEMON}" >> errors.txt
-    echo "Failed to retrieve data for ${POKEMON}, see errors.txt for details."
+  # Number of retry attempts
+  MAX_RETRIES=3
+  ATTEMPT=1
+  SUCCESS=false
+
+  # Retry mechanism
+  while [ $ATTEMPT -le $MAX_RETRIES ]; do
+    echo "Attempt $ATTEMPT of $MAX_RETRIES..."
+
+    # -f: Fail on HTTP errors (4xx, 5xx)
+    # -sS: Silent mode but show errors
+    # -o: Output to file
+    if curl -f -sS "$API_URL" -o "$OUTPUT_FILE"; then
+      echo "Data for ${POKEMON} saved to ${OUTPUT_FILE}"
+      SUCCESS=true
+      break
+    else
+      echo "Request failed for ${POKEMON} (Attempt $ATTEMPT)."
+      ATTEMPT=$((ATTEMPT + 1))
+
+      sleep 1
+    fi
+  done
+
+  # If still not successful after MAX_RETRIES, log error
+  if [ "$SUCCESS" = false ]; then
+    echo "$(date): Failed to retrieve data for ${POKEMON} after $MAX_RETRIES attempts." \
+      | tee -a errors.txt
   fi
 
-  # Delay to help avoid rate-limiting
+  # Delay to help avoid rate-limiting before next Pokémon
   sleep 1
 done
