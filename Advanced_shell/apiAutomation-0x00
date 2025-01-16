@@ -1,0 +1,20 @@
+#!/usr/bin/env bash
+
+# API endpoint for Pikachu
+API_URL="https://pokeapi.co/api/v2/pokemon/pikachu"
+
+# Output and error files
+OUTPUT_FILE="data.json"
+ERROR_FILE="errors.txt"
+
+# Make the request with curl
+# -f: Fail on HTTP errors (4xx and 5xx)
+# -sS: Silent mode but still show errors
+# -o: Write output to a file
+if curl -f -sS "$API_URL" -o "$OUTPUT_FILE"; then
+  echo "Pikachu data saved to $OUTPUT_FILE"
+else
+  echo "$(date): Error retrieving data from $API_URL" >> "$ERROR_FILE"
+  echo "Failed to retrieve Pikachu data. Check $ERROR_FILE for details."
+  exit 1
+fi
